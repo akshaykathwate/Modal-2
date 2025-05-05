@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: cotton-model-api
+    env: python
+    buildCommand: ""
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PORT
+        value: 10000 # optional, or Render sets this automatically
