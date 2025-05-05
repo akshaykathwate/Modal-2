@@ -2,7 +2,7 @@ from __future__ import division, print_function
 import sys
 import os
 import numpy as np
-from tensorflow.keras.models import load_model
+import tensorflow as tf
 from tensorflow.keras.preprocessing import image
 from flask import Flask, jsonify, request
 from werkzeug.utils import secure_filename
@@ -10,21 +10,30 @@ from werkzeug.utils import secure_filename
 # Define a Flask app
 app = Flask(__name__)
 
-# Model saved with Keras model.save()
+# Load TFLite model
 MODEL_PATH = 'model_resnet152V2.tflite'
+interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
 
-# Load your trained model
-model = load_model(MODEL_PATH)
+# Get input and output details
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
-def model_predict(img_path, model):
+def model_predict(img_path):
     img = image.load_img(img_path, target_size=(224, 224))
-    x = image.img_to_array(img) / 255.0  # Scale the pixel values
-    x = np.expand_dims(x, axis=0)
-    
-    preds = model.predict(x)
+    x = image.img_to_array(img) / 255.0
+    x = np.expand_dims(x, axis=0).astype(np.float32)  # Ensure correct type
+
+    # Set input tensor
+    interpreter.set_tensor(input_details[0]['index'], x)
+
+    # Run inference
+    interpreter.invoke()
+
+    # Get output tensor
+    preds = interpreter.get_tensor(output_details[0]['index'])
     preds = np.argmax(preds, axis=1)
-    
-    # Map the prediction to label
+
     if preds == 0:
         return "The leaf is diseased cotton leaf"
     elif preds == 1:
@@ -45,14 +54,14 @@ def predict_api():
         return jsonify({"error": "No selected file"}), 400
 
     if file:
-        # Save the file to ./uploads
         basepath = os.path.dirname(__file__)
-        file_path = os.path.join(basepath, 'uploads', secure_filename(file.filename))
+        upload_dir = os.path.join(basepath, 'uploads')
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, secure_filename(file.filename))
         file.save(file_path)
         
-        # Make prediction
-        result = model_predict(file_path, model)
-        # os.remove(file_path)  # Remove file after prediction
+        result = model_predict(file_path)
+        # os.remove(file_path)
         return jsonify({"prediction": result})
 
     return jsonify({"error": "File upload failed"}), 500
